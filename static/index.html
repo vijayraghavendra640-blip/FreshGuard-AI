@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FreshGuard AI — Stale-Answer Detector & Live Fact Verification</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #f8fafc;
+      color: #0f172a;
+    }
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .card-surface {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05);
+    }
+    .filter-btn {
+      position: relative;
+      transition: all 0.2s ease;
+    }
+    .filter-btn[data-empty="true"]:hover::after {
+      content: attr(data-hover-msg);
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: #0f172a;
+      color: #ffffff;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 5px 10px;
+      border-radius: 6px;
+      white-space: nowrap;
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.18);
+      z-index: 40;
+      pointer-events: none;
+    }
+    .filter-btn[data-empty="true"]:hover::before {
+      content: "";
+      position: absolute;
+      bottom: calc(100% + 3px);
+      left: 50%;
+      transform: translateX(-50%);
+      border-width: 5px 5px 0 5px;
+      border-style: solid;
+      border-color: #0f172a transparent transparent transparent;
+      z-index: 40;
+      pointer-events: none;
+    }
+    @keyframes fadeSlideIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-page {
+      animation: fadeSlideIn 0.35s ease forwards;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between">
+
+  <!-- TOP NAVIGATION BAR -->
+  <header class="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200">
+    <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-extrabold text-lg shadow-sm">
+          FG
+        </div>
+        <div>
+          <span class="text-xl font-extrabold tracking-tight text-slate-900">FreshGuard <span class="text-indigo-600">AI</span></span>
+          <p class="text-xs text-slate-500">Stale-Answer Detector & Live Fact Verification</p>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN CONTAINER -->
+  <main class="max-w-5xl w-full mx-auto px-6 py-10 flex-1 flex flex-col justify-center">
+
+    <!-- ========================================== -->
+    <!-- PAGE 1: INPUT VIEW                         -->
+    <!-- ========================================== -->
+    <section id="page-input-view" class="animate-page my-auto">
+      <div class="text-center max-w-2xl mx-auto mb-8">
+        <h1 class="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight mb-3">
+          Detect Outdated Claims in AI Responses
+        </h1>
+        <p class="text-slate-600 text-base">
+          Paste any LLM-generated answer below. FreshGuard AI breaks it into individual statements, verifies time-sensitive facts against live web sources, and scores overall freshness.
+        </p>
+      </div>
+
+      <!-- INPUT BOX CARD -->
+      <div class="card-surface rounded-2xl p-6 sm:p-8 max-w-3xl mx-auto">
+        <div class="flex items-center justify-between mb-3">
+          <label for="ai-input-text" class="text-xs font-bold uppercase tracking-wider text-slate-700">
+            Paste LLM-Generated Response
+          </label>
+          <span id="char-count" class="text-xs text-slate-400 mono">0 characters</span>
+        </div>
+
+        <textarea
+          id="ai-input-text"
+          rows="7"
+          oninput="updateCharCount()"
+          class="w-full rounded-xl bg-slate-50 border border-slate-200 p-4 text-slate-800 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition"
+          placeholder="Paste an AI response here (for example: API versions, pricing tiers, leadership roles, or framework releases)..."
+        ></textarea>
+
+        <!-- Error Message Banner -->
+        <div id="error-banner" class="hidden mt-4 rounded-xl bg-red-50 border border-red-200 p-3.5 text-xs text-red-700 font-medium"></div>
+
+        <div class="mt-5 flex flex-wrap items-center justify-between gap-4">
+          <button
+            onclick="clearInput()"
+            type="button"
+            class="text-xs font-semibold text-slate-500 hover:text-slate-800 px-3 py-2 rounded-lg hover:bg-slate-100 transition">
+            Clear Text
+          </button>
+
+          <button
+            id="verify-btn"
+            onclick="runFreshnessScan()"
+            type="button"
+            class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm px-7 py-3.5 rounded-xl shadow-md hover:shadow-lg transition flex items-center gap-2.5">
+            <span id="verify-btn-text">Scan & Verify Freshness →</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- PAGE 2: VERIFICATION REPORT VIEW           -->
+    <!-- ========================================== -->
+    <section id="page-report-view" class="hidden animate-page space-y-8">
+
+      <!-- Top Header -->
+      <div class="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-4">
+        <div>
+          <h2 class="text-2xl font-extrabold text-slate-900">Freshness Verification Report</h2>
+          <p class="text-xs text-slate-500 mt-0.5">Live web comparison and claim-by-claim freshness scoring</p>
+        </div>
+      </div>
+
+      <!-- SCORE GAUGE + SUMMARY METRICS -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+
+        <!-- CIBIL-STYLE SEMI-CIRCULAR FRESHNESS GAUGE CARD -->
+        <div class="lg:col-span-5 card-surface rounded-2xl p-6 flex flex-col items-center justify-between">
+          <div class="w-full mb-2">
+            <h3 class="text-sm font-bold uppercase tracking-wider text-slate-700">Overall Freshness Score</h3>
+            <p class="text-xs text-slate-400">Based on live web verification</p>
+          </div>
+
+          <!-- SVG Semi-Circular CIBIL Gauge -->
+          <div class="relative w-64 h-36 flex items-end justify-center my-2">
+            <svg viewBox="0 0 200 115" class="w-full h-full overflow-visible">
+              <!-- Background Track -->
+              <path
+                d="M 20 100 A 80 80 0 0 1 180 100"
+                fill="none"
+                stroke="#f1f5f9"
+                stroke-width="18"
+                stroke-linecap="round"
+              />
+              <!-- Red Zone: Outdated (0 - 49) -->
+              <path
+                d="M 20 100 A 80 80 0 0 1 65 28"
+                fill="none"
+                stroke="#ef4444"
+                stroke-width="16"
+                stroke-linecap="butt"
+              />
+              <!-- Amber Zone: Needs Review (50 - 79) -->
+              <path
+                d="M 68 26.5 A 80 80 0 0 1 132 26.5"
+                fill="none"
+                stroke="#f59e0b"
+                stroke-width="16"
+                stroke-linecap="butt"
+              />
+              <!-- Green Zone: Verified (80 - 100) -->
+              <path
+                d="M 135 28 A 80 80 0 0 1 180 100"
+                fill="none"
+                stroke="#10b981"
+                stroke-width="16"
+                stroke-linecap="butt"
+              />
+
+              <!-- Scale Labels -->
+              <text x="12" y="114" font-size="9" font-weight="700" fill="#94a3b8">0</text>
+              <text x="54" y="18" font-size="8" font-weight="700" fill="#ef4444">50</text>
+              <text x="136" y="18" font-size="8" font-weight="700" fill="#10b981">80</text>
+              <text x="175" y="114" font-size="9" font-weight="700" fill="#94a3b8">100</text>
+
+              <!-- Dynamic Needle (Calculated via JS Trigonometry) -->
+              <polygon
+                id="gauge-needle-polygon"
+                points="28,100 100,96 100,104"
+                fill="#1e293b"
+              />
+              <circle cx="100" cy="100" r="7" fill="#0f172a" />
+              <circle cx="100" cy="100" r="3" fill="#ffffff" />
+            </svg>
+          </div>
+
+          <!-- Score Readout + Single Status Pill Below Gauge -->
+          <div class="text-center mt-1">
+            <div class="flex items-baseline justify-center gap-1">
+              <span id="overall-score-num" class="text-4xl font-extrabold text-slate-900 mono">0</span>
+              <span class="text-sm font-semibold text-slate-400 mono">/ 100</span>
+            </div>
+            <div id="gauge-status-pill" class="inline-block mt-2 text-xs font-bold px-3.5 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+              Evaluating...
+            </div>
+          </div>
+
+          <!-- Color Zone Legend -->
+          <div class="w-full grid grid-cols-3 gap-2 pt-4 mt-4 border-t border-slate-100 text-center text-[11px]">
+            <div id="legend-zone-outdated" class="rounded-lg py-1.5 px-1 bg-red-50/60 text-red-700 font-semibold border border-transparent transition">
+              0–49 Outdated
+            </div>
+            <div id="legend-zone-review" class="rounded-lg py-1.5 px-1 bg-amber-50/60 text-amber-700 font-semibold border border-transparent transition">
+              50–79 Review
+            </div>
+            <div id="legend-zone-verified" class="rounded-lg py-1.5 px-1 bg-emerald-50/60 text-emerald-700 font-semibold border border-transparent transition">
+              80–100 Verified
+            </div>
+          </div>
+        </div>
+
+        <!-- 4 HACKATHON-ALIGNED KPI METRICS -->
+        <div class="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="card-surface rounded-2xl p-5 flex flex-col justify-between">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Claims Identified</span>
+            <div class="my-2">
+              <span id="stat-total-claims" class="text-3xl font-extrabold text-slate-900 mono">0</span>
+            </div>
+            <span class="text-xs text-slate-500">Total statements extracted from the AI response</span>
+          </div>
+
+          <div class="card-surface rounded-2xl p-5 flex flex-col justify-between">
+            <span class="text-xs font-bold uppercase tracking-wider text-indigo-600">Freshness Detection Checks</span>
+            <div class="my-2">
+              <span id="stat-web-searches" class="text-3xl font-extrabold text-indigo-600 mono">0</span>
+            </div>
+            <span class="text-xs text-slate-500">Time-sensitive claims checked against live web sources</span>
+          </div>
+
+          <div class="card-surface rounded-2xl p-5 flex flex-col justify-between">
+            <span class="text-xs font-bold uppercase tracking-wider text-red-600">Outdated Information</span>
+            <div class="my-2">
+              <span id="stat-stale-claims" class="text-3xl font-extrabold text-red-600 mono">0</span>
+            </div>
+            <span class="text-xs text-slate-500">Statements contradicted by current web sources</span>
+          </div>
+
+          <div class="card-surface rounded-2xl p-5 flex flex-col justify-between">
+            <span class="text-xs font-bold uppercase tracking-wider text-emerald-600">Verified Information</span>
+            <div class="my-2">
+              <span id="stat-verified-claims" class="text-3xl font-extrabold text-emerald-600 mono">0</span>
+            </div>
+            <span class="text-xs text-slate-500">Statements confirmed accurate and up to date</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- FRESHNESS DETECTION & LIVE VERIFICATION BREAKDOWN -->
+      <div class="card-surface rounded-2xl p-6 sm:p-8">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-200">
+          <div>
+            <h3 class="text-lg font-bold text-slate-900">Freshness Detection & Live Verification</h3>
+            <p class="text-xs text-slate-500">Hover or click any category below to filter statements</p>
+          </div>
+
+          <!-- Filter Tabs with Hover Tooltip when 0 -->
+          <div class="flex flex-wrap gap-2">
+            <button
+              id="tab-all"
+              onclick="filterClaims('ALL')"
+              data-empty="false"
+              data-hover-msg="No statements"
+              class="filter-btn text-xs font-semibold px-3.5 py-2 rounded-lg bg-indigo-600 text-white shadow-sm">
+              All (<span id="count-all">0</span>)
+            </button>
+            <button
+              id="tab-stale"
+              onclick="filterClaims('Stale / Outdated')"
+              data-empty="false"
+              data-hover-msg="0 Outdated statements detected"
+              class="filter-btn text-xs font-semibold px-3.5 py-2 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200">
+              Stale / Outdated (<span id="count-stale">0</span>)
+            </button>
+            <button
+              id="tab-review"
+              onclick="filterClaims('Needs Review')"
+              data-empty="false"
+              data-hover-msg="0 Needs Review statements detected"
+              class="filter-btn text-xs font-semibold px-3.5 py-2 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200">
+              Needs Review (<span id="count-review">0</span>)
+            </button>
+            <button
+              id="tab-verified"
+              onclick="filterClaims('Verified')"
+              data-empty="false"
+              data-hover-msg="0 Verified statements detected"
+              class="filter-btn text-xs font-semibold px-3.5 py-2 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200">
+              Verified (<span id="count-verified">0</span>)
+            </button>
+          </div>
+        </div>
+
+        <!-- Submitted LLM Response Reference Box -->
+        <div class="mt-5 rounded-xl bg-slate-50 border border-slate-200 p-4">
+          <div class="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+            LLM-Generated Response (Reference)
+          </div>
+          <p id="llm-reference-text" class="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap"></p>
+        </div>
+
+        <!-- Statement Cards List -->
+        <div id="claims-list-container" class="mt-6 space-y-4"></div>
+      </div>
+
+      <!-- Bottom Action Button: Check Another AI Response -->
+      <div class="flex justify-center pt-2">
+        <button
+          onclick="goBackToInputPage()"
+          type="button"
+          class="bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-semibold text-xs px-5 py-3 rounded-xl shadow-sm transition flex items-center gap-2">
+          ← Check Another AI Response
+        </button>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- MINIMAL FOOTER -->
+  <footer class="border-t border-slate-200 bg-white py-5 mt-12">
+    <div class="max-w-6xl mx-auto px-6 text-center text-xs font-semibold text-slate-500">
+      Powered by Tavily &amp; Bifrost AI
+    </div>
+  </footer>
+    <script>
+    let currentClaims = [];
+    let activeFilter = 'ALL';
+    let gaugeAnimationFrame = null;
+
+    function updateCharCount() {
+      const text = document.getElementById('ai-input-text').value || '';
+      document.getElementById('char-count').textContent = `${text.length} characters`;
+    }
+
+    function clearInput() {
+      document.getElementById('ai-input-text').value = '';
+      updateCharCount();
+      hideError();
+    }
+
+    function showError(msg) {
+      const banner = document.getElementById('error-banner');
+      banner.textContent = msg;
+      banner.classList.remove('hidden');
+    }
+
+    function hideError() {
+      const banner = document.getElementById('error-banner');
+      banner.classList.add('hidden');
+    }
+
+    function goBackToInputPage() {
+      document.getElementById('page-report-view').classList.add('hidden');
+      document.getElementById('page-input-view').classList.remove('hidden');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // Draw needle at exact score [0..100] using pure trigonometry
+    function drawNeedleAtScore(scoreValue) {
+      const clamped = Math.max(0, Math.min(100, Number(scoreValue) || 0));
+      const theta = Math.PI * (1 - clamped / 100);
+      const cx = 100;
+      const cy = 100;
+      const length = 72;
+      const baseRadius = 4.5;
+
+      const tipX = cx + length * Math.cos(theta);
+      const tipY = cy - length * Math.sin(theta);
+
+      const leftX = cx + baseRadius * Math.cos(theta + Math.PI / 2);
+      const leftY = cy - baseRadius * Math.sin(theta + Math.PI / 2);
+
+      const rightX = cx + baseRadius * Math.cos(theta - Math.PI / 2);
+      const rightY = cy - baseRadius * Math.sin(theta - Math.PI / 2);
+
+      const polygon = document.getElementById('gauge-needle-polygon');
+      if (polygon) {
+        polygon.setAttribute(
+          'points',
+          `${tipX.toFixed(2)},${tipY.toFixed(2)} ${leftX.toFixed(2)},${leftY.toFixed(2)} ${rightX.toFixed(2)},${rightY.toFixed(2)}`
+        );
+      }
+    }
+
+    function animateCibilGauge(targetScore) {
+      const clamped = Math.max(0, Math.min(100, Math.round(Number(targetScore) || 0)));
+      const scoreNumEl = document.getElementById('overall-score-num');
+      const pill = document.getElementById('gauge-status-pill');
+
+      const zoneOutdated = document.getElementById('legend-zone-outdated');
+      const zoneReview = document.getElementById('legend-zone-review');
+      const zoneVerified = document.getElementById('legend-zone-verified');
+
+      zoneOutdated.className = 'rounded-lg py-1.5 px-1 bg-red-50/60 text-red-700 font-semibold border border-transparent transition';
+      zoneReview.className = 'rounded-lg py-1.5 px-1 bg-amber-50/60 text-amber-700 font-semibold border border-transparent transition';
+      zoneVerified.className = 'rounded-lg py-1.5 px-1 bg-emerald-50/60 text-emerald-700 font-semibold border border-transparent transition';
+
+      if (clamped >= 80) {
+        pill.textContent = 'Verified';
+        pill.className = 'inline-block mt-2 text-xs font-bold px-3.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200';
+        zoneVerified.className = 'rounded-lg py-1.5 px-1 bg-emerald-100 text-emerald-900 font-extrabold border border-emerald-400 shadow-sm transition';
+      } else if (clamped >= 50) {
+        pill.textContent = 'Needs Review';
+        pill.className = 'inline-block mt-2 text-xs font-bold px-3.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200';
+        zoneReview.className = 'rounded-lg py-1.5 px-1 bg-amber-100 text-amber-900 font-extrabold border border-amber-400 shadow-sm transition';
+      } else {
+        pill.textContent = 'Outdated';
+        pill.className = 'inline-block mt-2 text-xs font-bold px-3.5 py-1 rounded-full bg-red-50 text-red-700 border border-red-200';
+        zoneOutdated.className = 'rounded-lg py-1.5 px-1 bg-red-100 text-red-900 font-extrabold border border-red-400 shadow-sm transition';
+      }
+
+      if (gaugeAnimationFrame) {
+        cancelAnimationFrame(gaugeAnimationFrame);
+      }
+
+      const duration = 900;
+      const startTime = performance.now();
+
+      function step(now) {
+        const elapsed = now - startTime;
+        const progress = Math.min(1, elapsed / duration);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        const currentVal = clamped * eased;
+
+        drawNeedleAtScore(currentVal);
+        scoreNumEl.textContent = Math.round(currentVal);
+
+        if (progress < 1) {
+          gaugeAnimationFrame = requestAnimationFrame(step);
+        } else {
+          drawNeedleAtScore(clamped);
+          scoreNumEl.textContent = clamped;
+        }
+      }
+
+      drawNeedleAtScore(0);
+      scoreNumEl.textContent = '0';
+      gaugeAnimationFrame = requestAnimationFrame(step);
+    }
+
+    async function runFreshnessScan() {
+      hideError();
+      const inputEl = document.getElementById('ai-input-text');
+      const text = (inputEl.value || '').trim();
+
+      if (!text) {
+        showError('Please paste an AI-generated response first.');
+        return;
+      }
+
+      const btn = document.getElementById('verify-btn');
+      const btnText = document.getElementById('verify-btn-text');
+      btn.disabled = true;
+      btn.classList.add('opacity-75', 'cursor-not-allowed');
+      btnText.textContent = 'Verifying against live web sources...';
+
+      try {
+        const res = await fetch('/api/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.detail || 'Verification request failed.');
+        }
+
+        currentClaims = data.claims || [];
+
+        const staleCount = currentClaims.filter(c => c.verdict === 'Stale / Outdated').length;
+        const reviewCount = currentClaims.filter(c => c.verdict === 'Needs Review').length;
+        const verifiedCount = currentClaims.filter(c => c.verdict === 'Verified').length;
+        const liveSearchesCount = currentClaims.filter(c => !(c.is_foundational_fact === true || c.requires_live_search === false)).length;
+
+        // Populate 4 KPI Metric Cards beside the Score Gauge
+        document.getElementById('stat-total-claims').textContent = data.total_claims ?? currentClaims.length;
+        document.getElementById('stat-web-searches').textContent = data.web_searches_used ?? data.live_web_searches ?? liveSearchesCount;
+        document.getElementById('stat-stale-claims').textContent = data.stale_count ?? data.stale_claims ?? staleCount;
+        document.getElementById('stat-verified-claims').textContent = data.verified_count ?? data.verified_claims ?? verifiedCount;
+
+        // Populate LLM Reference Box
+        document.getElementById('llm-reference-text').textContent = text;
+
+        // Update Filter Counts & Hover Empty Flags
+        document.getElementById('count-all').textContent = currentClaims.length;
+        document.getElementById('count-stale').textContent = staleCount;
+        document.getElementById('count-review').textContent = reviewCount;
+        document.getElementById('count-verified').textContent = verifiedCount;
+
+        document.getElementById('tab-stale').setAttribute('data-empty', staleCount === 0 ? 'true' : 'false');
+        document.getElementById('tab-review').setAttribute('data-empty', reviewCount === 0 ? 'true' : 'false');
+        document.getElementById('tab-verified').setAttribute('data-empty', verifiedCount === 0 ? 'true' : 'false');
+
+        // Switch from Page 1 to Page 2
+        document.getElementById('page-input-view').classList.add('hidden');
+        document.getElementById('page-report-view').classList.remove('hidden');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+
+        // Animate Gauge & Render Cards
+        animateCibilGauge(data.overall_freshness_score ?? 100);
+        filterClaims('ALL');
+      } catch (err) {
+        showError(err.message || 'Something went wrong while verifying.');
+      } finally {
+        btn.disabled = false;
+        btn.classList.remove('opacity-75', 'cursor-not-allowed');
+        btnText.textContent = 'Scan & Verify Freshness →';
+      }
+    }
+
+    function filterClaims(category) {
+      activeFilter = category;
+      const tabMap = {
+        'ALL': 'tab-all',
+        'Stale / Outdated': 'tab-stale',
+        'Needs Review': 'tab-review',
+        'Verified': 'tab-verified'
+      };
+
+      Object.entries(tabMap).forEach(([key, id]) => {
+        const el = document.getElementById(id);
+        if (key === category) {
+          el.className = 'filter-btn text-xs font-semibold px-3.5 py-2 rounded-lg bg-indigo-600 text-white shadow-sm';
+        } else {
+          el.className = 'filter-btn text-xs font-semibold px-3.5 py-2 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200';
+        }
+      });
+
+      renderClaims();
+    }
+
+    function escapeHtml(str) {
+      return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function renderClaims() {
+      const container = document.getElementById('claims-list-container');
+      const filtered = activeFilter === 'ALL'
+        ? currentClaims
+        : currentClaims.filter(c => c.verdict === activeFilter);
+
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-8 text-center">
+            <p class="text-sm font-bold text-slate-700">0 statements in "${escapeHtml(activeFilter)}"</p>
+            <p class="text-xs text-slate-500 mt-1">Select "All" above to view all analyzed statements.</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = filtered.map((item) => {
+        const isStale = item.verdict === 'Stale / Outdated';
+        const isReview = item.verdict === 'Needs Review';
+        const isFoundational = item.is_foundational_fact === true || item.requires_live_search === false;
+
+        let badgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+        let borderAccent = 'border-l-4 border-l-emerald-500';
+        if (isStale) {
+          badgeClass = 'bg-red-50 text-red-700 border-red-200';
+          borderAccent = 'border-l-4 border-l-red-500';
+        } else if (isReview) {
+          badgeClass = 'bg-amber-50 text-amber-700 border-amber-200';
+          borderAccent = 'border-l-4 border-l-amber-500';
+        }
+
+        const statementText = item.llm_statement || item.claim_text || item.sentence || '';
+
+        const verificationDetailsHtml = isFoundational
+          ? `
+            <div class="mt-3 inline-flex items-center gap-2 rounded-lg bg-slate-100 border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600">
+              <span>✓ Foundational Fact — No Web Search Required</span>
+            </div>
+          `
+          : `
+            <div class="mt-4">
+              <div class="rounded-xl bg-indigo-50/50 border border-indigo-100 p-3.5">
+                <div class="text-[11px] font-bold uppercase tracking-wider text-indigo-600 mb-1">
+                  Current Latest Information
+                </div>
+                <p class="text-xs text-slate-800 leading-relaxed font-medium">${escapeHtml(item.current_latest_info || item.correction || 'Verified against current web sources.')}</p>
+              </div>
+            </div>
+            ${item.source_url ? `
+              <div class="mt-3 flex items-center justify-between gap-2 pt-2.5 border-t border-slate-100 text-xs">
+                <span class="font-semibold text-slate-500">Comparison Web URL (via Tavily AI):</span>
+                <a href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener noreferrer" class="font-semibold text-indigo-600 hover:text-indigo-800 underline truncate max-w-md">
+                  ${escapeHtml(item.source_title || item.source_url)} ↗
+                </a>
+              </div>
+            ` : ''}
+          `;
+
+        return `
+          <div class="rounded-xl bg-white border border-slate-200 ${borderAccent} p-5 shadow-sm transition hover:shadow-md">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+              <span class="text-xs font-bold px-2.5 py-1 rounded-full border ${badgeClass}">
+                ${escapeHtml(item.verdict)}
+              </span>
+              <span class="text-xs font-bold text-slate-600 mono">
+                Freshness Score: ${escapeHtml(item.freshness_score)} / 100
+              </span>
+            </div>
+
+            <div class="mt-1">
+              <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                LLM-Generated Statement
+              </div>
+              <p class="text-sm font-semibold text-slate-900 leading-relaxed">
+                "${escapeHtml(statementText)}"
+              </p>
+            </div>
+
+            ${verificationDetailsHtml}
+          </div>
+        `;
+      }).join('');
+    }
+  </script>
+</body>
+</html>
