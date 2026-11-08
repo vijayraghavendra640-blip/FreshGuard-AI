@@ -3,6 +3,8 @@
 **Geek Room Global AI Hackathon 2026 • Problem Statement 06 (Tavily)**  
 *Theme: AI-Powered Fact Verification & Information Freshness*
 
+🌐 **Live Deployed Application:** [https://freshguard-ai-9tgb.onrender.com/](https://freshguard-ai-9tgb.onrender.com/)
+
 ---
 
 ## 🚀 Overview
