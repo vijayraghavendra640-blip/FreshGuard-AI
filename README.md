@@ -77,7 +77,7 @@ FreshGuard AI is built by combining **Bifrost AI** and **Tavily Search API** int
 
     +------------------------------------------------------------------------+
     |                        USER / AI APPLICATION                           |
-    |          Submits AI-Generated Answer (+ Optional Question)             |
+    |                      Submits AI-Generated Answer             |
     +-----------------------------------+------------------------------------+
                                         |
                                         v
