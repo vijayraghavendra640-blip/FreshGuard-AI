@@ -1,4 +1,3 @@
-﻿# === START OF BOX 1 OF 15 ===
 import os
 import re
 import json
