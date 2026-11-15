@@ -26,8 +26,6 @@ CURRENT_YEAR = datetime.now(timezone.utc).year
 MAX_FRESH_SOURCE_AGE_DAYS = 90
 CLAIM_VERIFICATION_TIMEOUT_SECONDS = 22.0
 OVERALL_ANALYSIS_TIMEOUT_SECONDS = 45.0
-# === END OF BOX 1 OF 15 ===
-# === START OF BOX 2 OF 15 ===
 DEMO_PRESETS: Dict[str, Dict[str, Any]] = {
     "evergreen_facts": {
         "id": "evergreen_facts",
@@ -63,8 +61,6 @@ DEMO_PRESETS: Dict[str, Dict[str, Any]] = {
         "ai_answer": "The capital of France is Berlin. React is a JavaScript library.",
     },
 }
-# === END OF BOX 2 OF 15 ===
-# === START OF BOX 3 OF 15 ===
 class TTLCache:
     def __init__(self, maxsize: int = 256, ttl_seconds: int = 900):
         self.maxsize = maxsize
@@ -120,8 +116,6 @@ def clear_all_caches() -> Dict[str, int]:
 
 def clear_caches() -> Dict[str, int]:
     return clear_all_caches()
-# === END OF BOX 3 OF 15 ===
-# === START OF BOX 4 OF 15 ===
 LOW_CREDIBILITY_DOMAINS = {
     "reddit.com", "quora.com", "medium.com", "blogspot.com",
     "wordpress.com", "tumblr.com", "x.com", "twitter.com",
@@ -154,8 +148,6 @@ PROMPT_INJECTION_PATTERNS = [
     r"\x3c\s*/?\s*system\s*\x3e",
     r"\[\s*system\s*\]",
 ]
-# === END OF BOX 4 OF 15 ===
-# === START OF BOX 5 OF 15 ===
 def detect_prompt_injection(text: str) -> bool:
     if not text:
         return False
@@ -197,8 +189,6 @@ def get_domain_authority_tier(url: str) -> str:
 
 def is_credible_source(url: str) -> bool:
     return get_domain_authority_tier(url) in ("primary", "secondary")
-# === END OF BOX 5 OF 15 ===
-# === START OF BOX 6 OF 15 ===
 MONTH_MAP = {
     "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
     "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
@@ -249,8 +239,6 @@ def compute_days_old(dt: Optional[datetime]) -> Optional[int]:
     if not dt:
         return None
     return max(0, int((datetime.now(timezone.utc) - dt).total_seconds() // 86400))
-# === END OF BOX 6 OF 15 ===
-# === START OF BOX 7 OF 15 ===
 TIME_SENSITIVE_MARKERS = [
     r"\bcurrent(?:ly)?\b", r"\bincumbent\b", r"\bpresently\b", r"\bas\s+of\s+20\d{2}\b",
     r"\btoday\b", r"\bright\s+now\b", r"\blatest\b", r"\bnewest\b", r"\bmost\s+recent\b",
@@ -287,8 +275,6 @@ def classify_claim_nature(claim: str) -> str:
     if any(re.search(p, lower) for p in HISTORICAL_MARKERS):
         return "historical"
     return "time_sensitive"
-# === END OF BOX 7 OF 15 ===
-# === START OF BOX 8 OF 15 ===
 STOPWORDS = {
     "the", "a", "an", "of", "to", "in", "on", "for", "with", "at", "by", "from",
     "as", "is", "are", "was", "were", "be", "been", "being", "has", "have", "had",
@@ -322,8 +308,6 @@ def extract_entity_tokens(phrase: str) -> List[str]:
 
 def extract_keywords(text: str) -> List[str]:
     return [t for t in tokenize_words(text) if t not in STOPWORDS and (len(t) >= 2 or t.isdigit())]
-# === END OF BOX 8 OF 15 ===
-# === START OF BOX 9 OF 15 ===
 RELATION_PATTERNS = [
     ("capital", r"^(.+?)\s+(?:is|was)\s+(?:the\s+)?capital(?:\s+city)?\s+of\s+(.+)$"),
     ("capital_rev", r"^(?:the\s+)?capital(?:\s+city)?\s+of\s+(.+?)\s+(?:is|was)\s+(.+)$"),
@@ -367,8 +351,6 @@ CLAIM_NEGATION_PATTERNS = [
     (r"^(.+?)\s+was\s+not\s+(?:founded|created|established|launched|released)\s+in\s+(.+)$", "founded_in"),
     (r"^(.+?)\s+(?:is|are|was|were)\s+not\s+(.+)$", "copula_is"),
 ]
-# === END OF BOX 9 OF 15 ===
-# === START OF BOX 10 OF 15 ===
 AMBIGUOUS_NEGATION_PATTERNS = [
     r"\bnot\s+only\b", r"\bnot\s+just\b", r"\bnot\s+merely\b", r"\bnot\s+simply\b",
     r"\bnot\s+solely\b", r"\bnot\s+exclusively\b", r"\bnot\s+necessarily\b",
@@ -412,8 +394,6 @@ def extract_claim_spo_with_polarity(claim: str) -> Tuple[List[str], str, List[st
 def extract_claim_spo(claim: str) -> Tuple[List[str], str, List[str]]:
     s_tok, rel, o_tok, _ = extract_claim_spo_with_polarity(claim)
     return s_tok, rel, o_tok
-# === END OF BOX 10 OF 15 ===
-# === START OF BOX 11 OF 15 ===
 RELATION_VERBS = {
     "capital": ["capital"],
     "located_in": ["located in", "situated in", "based in", "headquartered in", "is in", "are in", "stands in"],
@@ -461,8 +441,6 @@ def split_into_clauses(text: str) -> List[str]:
 def _clause_is_conditional_or_attributed(clause: str) -> bool:
     lower = clause.lower()
     return any(re.search(pat, lower) for pat in ATTRIBUTED_OR_CONDITIONAL_PATTERNS)
-# === END OF BOX 11 OF 15 ===
-# === START OF BOX 12 OF 15 ===
 def _classify_clause_negation(clause: str, rel_stem: str = "") -> str:
     lower = clause.lower()
     if any(re.search(pat, lower) for pat in AMBIGUOUS_NEGATION_PATTERNS):
@@ -503,8 +481,6 @@ def _entity_span_matches(expected_tokens: List[str], candidate_span: str, strict
         return False
     extras = [cand_tokens[i] for i in range(len(cand_tokens)) if i not in matched and cand_tokens[i] not in STOPWORDS]
     return len(extras) <= strict_extra_limit
-# === END OF BOX 12 OF 15 ===
-# === START OF BOX 13 OF 15 ===
 def _evaluate_copula_clause(subj_tokens: List[str], obj_tokens: List[str], clause: str) -> Optional[str]:
     norm_clause = normalize_for_match(clause)
     m = re.match(r"^(.+?)\s+(is\s+not|are\s+not|was\s+not|were\s+not|isnt|arent|wasnt|werent|never\s+was|is|are|was|were)\s+(.+)$", norm_clause)
@@ -555,8 +531,6 @@ def _evaluate_explicit_relation_clause(subj_tokens: List[str], rel: str, obj_tok
             neg = _classify_clause_negation(clause, m_p.group(2))
             return None if neg == "ambiguous_negation" else ("negative" if neg == "direct_predicate_negation" else "affirmative")
     return None
-# === END OF BOX 13 OF 15 ===
-# === START OF BOX 14 OF 15 ===
 def _combine_polarities(claim_pol: str, ev_pol: Optional[str]) -> Optional[str]:
     if ev_pol not in ("affirmative", "negative") or claim_pol not in ("affirmative", "negative"):
         return None
@@ -605,8 +579,6 @@ def validate_quote_and_host_clause(claim: str, quote: str, source: Dict[str, Any
 
 def has_temporal_transition_evidence(claim: str, quote: str, source: Dict[str, Any]) -> bool:
     return False
-# === END OF BOX 14 OF 15 ===
-# === START OF BOX 15 OF 15 ===
 DEFAULT_SCORE_META = {"Scoring Type": "Deterministic Heuristic (Non-Probabilistic)"}
 
 
@@ -808,8 +780,6 @@ def get_gateway_health() -> Dict[str, Any]:
 
 def get_bifrost_status() -> Dict[str, Any]:
     return AI_GATEWAY.get_status()
-# === END OF BOX 15 OF 15 ===
-# === START OF BOX 16 ===
 def get_llm_api_key() -> str:
     return AI_GATEWAY._groq_key() or AI_GATEWAY._bifrost_key()
 
@@ -834,8 +804,6 @@ BifrostAIGateway.get_telemetry = lambda self: self.stats()
 BifrostAIGateway.get_metrics = lambda self: self.stats()
 BifrostAIGateway.get_status = lambda self: get_bifrost_status()
 BifrostAIGateway.get_health = lambda self: get_gateway_health()
-# === END OF BOX 16 ===
-# === START OF BOX 17 ===
 async def search_web_evidence(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
     q = (query or "").strip()
     if not q:
@@ -904,8 +872,6 @@ async def search_web_evidence(query: str, max_results: int = 5) -> List[Dict[str
     if results:
         SEARCH_CACHE.set(cache_key, results)
     return results
-# === END OF BOX 17 ===
-# === START OF BOX 18 ===
 def format_claim_object(
     claim: str,
     verdict: str,
@@ -997,8 +963,6 @@ def format_claim_object(
         "live_sources": sources,
         "evidence_sources": sources,
     }
-# === END OF BOX 18 ===
-# === START OF BOX 19 ===
 async def verify_single_claim(claim_text: str) -> Dict[str, Any]:
     claim = (claim_text or "").strip()
     nature = classify_claim_nature(claim)
@@ -1065,8 +1029,6 @@ async def verify_single_claim(claim_text: str) -> Dict[str, Any]:
         llm_reason or "Live web source retrieved; manual review recommended.",
         fallback_quote, nature, usable, best_idx, False
     )
-# === END OF BOX 19 ===
-# === START OF BOX 20 ===
 def extract_date_from_text(text: str) -> Optional[str]:
     if not text:
         return None
@@ -1140,8 +1102,6 @@ def evaluate_claim_against_sources(claim: str, sources: List[Dict[str, Any]]) ->
         "has_support": len(supporting) >= 1 and len(contradicting) == 0,
         "has_contradiction": len(contradicting) >= 1 and len(supporting) == 0,
     }
-# === END OF BOX 20 ===
-# === START OF BOX 21 ===
 async def llm_verify_claim_with_sources(
     claim: str,
     sources: List[Dict[str, Any]],
@@ -1211,8 +1171,6 @@ async def llm_verify_claim_with_sources(
         "confidence": 50,
         "explanation": "Retrieved live web evidence for review.",
     }
-# === END OF BOX 21 ===
-# === START OF BOX 22 ===
 def extract_domain(url: str) -> str:
     try:
         host = (urlparse((url or "").strip()).netloc or "").lower()
@@ -1274,8 +1232,6 @@ def extract_claim_spo_with_polarity(claim: str) -> Tuple[List[str], str, List[st
         if s_tok and o_tok:
             return (s_tok, "copula", o_tok, pol)
     return ([], "unknown_relation", [], pol)
-# === END OF BOX 22 ===
-# === START OF BOX 23 ===
 def classify_claim_nature(claim: str) -> str:
     low = (claim or "").lower()
     ts_words = ("current", "currently", "today", "now", "latest", "ceo", "president", "prime minister", "price", "2024", "2025", "2026")
@@ -1366,8 +1322,6 @@ async def analyze_text_freshness(text: Any = "", **kwargs: Any) -> Dict[str, Any
             "verified_count": 0, "incorrect_count": 0, "needs_review_count": 0,
             "claims": [], "results": [], "sources": [], "latency_ms": 10, "engine_version": ENGINE_VERSION,
         }
-# === END OF BOX 23 ===
-# === START OF BOX 24 ===
 _base_analyze_text_freshness = analyze_text_freshness
 _base_generate_ai_answer = generate_ai_answer_with_bifrost
 
@@ -1384,8 +1338,6 @@ async def analyze_text_freshness(*args: Any, **kwargs: Any) -> Dict[str, Any]:
 async def generate_ai_answer_with_bifrost(*args: Any, **kwargs: Any) -> Dict[str, Any]:
     prompt_val = str(args[0]) if args else str(kwargs.get("prompt") or kwargs.get("question") or "")
     return await _base_generate_ai_answer(prompt_val)
-# === END OF BOX 24 ===
-# === START OF BOX 25 ===
 def get_groq_api_key() -> str:
     return (os.getenv("GROQ_API_KEY") or "").strip().strip('"').strip("'")
 
@@ -1405,8 +1357,6 @@ def get_bifrost_base_url() -> str:
 BifrostAIGateway._groq_key = staticmethod(get_groq_api_key)
 BifrostAIGateway._bifrost_key = staticmethod(get_bifrost_api_key)
 BifrostAIGateway._bifrost_url = staticmethod(get_bifrost_base_url)
-# === END OF BOX 25 ===
-# === START OF BOX 26 ===
 def format_claim_object(
     claim: str,
     verdict: str,
@@ -1507,8 +1457,6 @@ def format_claim_object(
         "live_sources": sources,
         "evidence_sources": sources,
     }
-# === END OF BOX 26 ===
-# === START OF BOX 27 ===
 async def verify_single_claim(claim_text: str) -> Dict[str, Any]:
     claim = (claim_text or "").strip()
     nature = classify_claim_nature(claim)
@@ -1575,8 +1523,6 @@ def aggregate_overall_verdict(claims: List[Dict[str, Any]]) -> Dict[str, Any]:
     if v_cnt >= r_cnt and v_cnt >= 1:
         return {"overall_verdict": "Verified", "freshness_score": avg_score, "risk_level": "LOW"}
     return {"overall_verdict": "Needs Review", "freshness_score": avg_score, "risk_level": "MEDIUM"}
-# === END OF BOX 27 ===
-# === START OF BOX 28 ===
 CLAIM_CACHE.get = lambda *a, **kw: None
 
 
@@ -1656,8 +1602,6 @@ async def llm_verify_claim_with_sources(
         "confidence": 55,
         "explanation": "Retrieved live web evidence for review.",
     }
-# === END OF BOX 28 ===
-# === START OF BOX 28 ===
 CLAIM_CACHE.get = lambda *a, **kw: None
 
 
@@ -1737,8 +1681,6 @@ async def llm_verify_claim_with_sources(
         "confidence": 55,
         "explanation": "Retrieved live web evidence for review.",
     }
-# === END OF BOX 28 ===
-# === START OF BOX 29 ===
 async def verify_single_claim(claim_text: str) -> Dict[str, Any]:
     claim = (claim_text or "").strip()
     nature = classify_claim_nature(claim)
@@ -1829,8 +1771,6 @@ async def analyze_text_freshness(*args: Any, **kwargs: Any) -> Dict[str, Any]:
         "claims": claims_out, "results": claims_out, "sources": all_sources, "live_sources": all_sources,
         "latency_ms": int((time.time() - t0) * 1000), "engine_version": ENGINE_VERSION,
     }
-# === END OF BOX 29 ===
-# === START OF BOX 30 ===
 def _load_dotenv_file() -> None:
     try:
         from dotenv import load_dotenv
@@ -1910,8 +1850,6 @@ async def llm_verify_claim_with_sources(
 
     fallback_snip = sources[0].get("snippet", "") if sources else "Unable to reach LLM verifier."
     return {"relation": "insufficient", "selected_source_index": 0, "verbatim_quote": fallback_snip, "confidence": 55, "explanation": fallback_snip}
-# === END OF BOX 30 ===
-# === START OF BOX 31 ===
 def format_claim_object(
     claim: str,
     verdict: str,
@@ -1977,8 +1915,6 @@ def format_claim_object(
         "credibility_tier": primary.get("credibility_tier", "secondary") if primary else "primary",
         "primary_source": primary, "sources": sources, "live_sources": sources, "evidence_sources": sources,
     }
-# === END OF BOX 31 ===
-# === START OF BOX 32 ===
 async def verify_single_claim(claim_text: str) -> Dict[str, Any]:
     claim = (claim_text or "").strip()
     nature = classify_claim_nature(claim)
@@ -2046,8 +1982,6 @@ def aggregate_overall_verdict(claims: List[Dict[str, Any]]) -> Dict[str, Any]:
     if v_cnt >= 1 and v_cnt >= r_cnt:
         return {"overall_verdict": "Verified", "freshness_score": avg_score, "risk_level": "LOW"}
     return {"overall_verdict": "Needs Review", "freshness_score": avg_score, "risk_level": "MEDIUM"}
-# === END OF BOX 32 ===
-# === START OF BOX 33 ===
 def _clean_search_query(raw_query: str) -> str:
     q = (raw_query or "").strip().rstrip(".!?")
     q = re.sub(r"\bamerica\b", "United States", q, flags=re.IGNORECASE)
@@ -2120,8 +2054,6 @@ async def search_web_evidence(query: str, max_results: int = 5) -> List[Dict[str
         except Exception:
             pass
     return results
-# === END OF BOX 33 ===
-# === START OF BOX 34 ===
 async def verify_single_claim(claim_text: str) -> Dict[str, Any]:
     claim = (claim_text or "").strip()
     low = claim.lower()
@@ -2174,8 +2106,6 @@ async def verify_single_claim(claim_text: str) -> Dict[str, Any]:
     if llm_rel == "supports":
         return format_claim_object(claim, "Verified", 92, llm_reason or "Verified as accurate against live web evidence.", best_fact, nature, usable, best_idx, True)
     return format_claim_object(claim, "Needs Review", 55, llm_reason or "Live web source retrieved; manual review recommended.", best_fact, nature, usable, best_idx, False)
-# === END OF BOX 34 ===
-# === START OF BOX 35 ===
 def _find_any_key(prefix: str, env_names: Tuple[str, ...]) -> str:
     _load_dotenv_file()
     for name in env_names:
@@ -2246,8 +2176,6 @@ async def search_web_evidence(query: str, max_results: int = 5) -> List[Dict[str
         except Exception:
             pass
     return results
-# === END OF BOX 35 ===
-# === START OF BOX 36 ===
 _base_search_web_evidence = search_web_evidence
 
 
@@ -2331,8 +2259,6 @@ async def llm_verify_claim_with_sources(
 
     top_snip = sources[0].get("snippet", "") if sources else f"Live check completed as of {today_str}; this statement requires manual verification."
     return {"relation": "insufficient", "selected_source_index": 0, "verbatim_quote": top_snip, "confidence": 60, "explanation": top_snip}
-# === END OF BOX 36 ===
-# === START OF BOX 37 ===
 async def search_web_evidence(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
     q = (query or "").strip()
     if not q:
@@ -2396,8 +2322,6 @@ async def search_web_evidence(query: str, max_results: int = 5) -> List[Dict[str
             except Exception:
                 continue
     return results
-# === END OF BOX 37 ===
-# === START OF BOX 38 ===
 def _deterministic_fact_check(claim: str, usable: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     low = claim.lower()
     if any(p in low for p in ("while ", "but actually", "is actually the")) and "capital" in low and "sydney" in low:
@@ -2477,8 +2401,6 @@ async def verify_single_claim(claim_text: str) -> Dict[str, Any]:
     if det is not None:
         return det
     return await _prev_verify_single_claim(claim)
-# === END OF BOX 38 ===
-# === START OF BOX 39 ===
 CLAIM_VERIFICATION_TIMEOUT_SECONDS = 45
 OVERALL_ANALYSIS_TIMEOUT_SECONDS = 90
 _LLM_SEMAPHORE = asyncio.Semaphore(1)
@@ -2553,8 +2475,6 @@ async def llm_verify_claim_against_evidence(claim_text: str, sources: List[Dict[
             pass
     best_snip = str(sources[0].get("snippet", "")).strip() if sources else f"Verified factual check for: {claim_text}"
     return {"verdict": "supported", "confidence": 85, "correction": best_snip, "selected_index": 0}
-# === END OF BOX 39 ===
-# === START OF BOX 40 ===
 async def _batch_verify_claims(claims: List[str], sources_list: List[List[Dict[str, Any]]]) -> List[Optional[Dict[str, Any]]]:
     if len(claims) <= 1:
         return [None for _ in claims]
@@ -2645,8 +2565,6 @@ async def analyze_text_freshness(*args, **kwargs) -> Dict[str, Any]:
         "gateway_telemetry": AI_GATEWAY.get_telemetry()
     })
     return agg
-# === END OF BOX 40 ===
-# === START OF BOX 41 ===
 CURRENT_YEAR = datetime.now(timezone.utc).year
 
 
@@ -2688,8 +2606,6 @@ def check_temporal_staleness(claim_text: str, sources: Optional[List[Dict[str, A
             "Temporal_Status": "Stale"
         }
     return {"is_stale": False, "reason": "", "Temporal_Status": "Fresh"}
-# === END OF BOX 41 ===
-# === START OF BOX 42 ===
 def split_into_claims(text: str) -> List[str]:
     if not text or not str(text).strip():
         return []
@@ -2754,8 +2670,6 @@ def format_claim_object(claim_text: str, idx: int = 0, sources: Optional[List[Di
         "source_title": s_title, "title": s_title, "source_name": s_title,
         "sources": srcs, "live_sources": srcs, "evidence_sources": srcs
     }
-# === END OF BOX 42 ===
-# === START OF BOX 43 ===
 def aggregate_overall_verdict(verified_claims: List[Dict[str, Any]]) -> Dict[str, Any]:
     total = len(verified_claims)
     if total == 0:
@@ -2848,8 +2762,6 @@ async def analyze_text_freshness(*args, **kwargs) -> Dict[str, Any]:
         "timestamp": datetime.now(timezone.utc).isoformat()
     })
     return agg
-# === END OF BOX 43 ===
-# === START OF BOX 44 ===
 import urllib.parse
 
 _HTTP_HEADERS = {
@@ -2945,8 +2857,6 @@ async def search_web_evidence(query: str, max_results: int = 4) -> List[Dict[str
             "snippet": f"Reference lookup for: {query}"
         })
     return results[:max_results]
-# === END OF BOX 44 ===
-# === START OF BOX 45 ===
 def _deterministic_fact_check(claim_text: str, sources: Optional[List[Dict[str, Any]]] = None) -> Optional[Dict[str, Any]]:
     low = (claim_text or "").lower().strip()
     srcs = sources if isinstance(sources, list) else []
@@ -3025,8 +2935,6 @@ async def _call_llm_text(sys_msg: str, usr_msg: str) -> str:
             except Exception:
                 pass
     return ""
-# === END OF BOX 45 ===
-# === START OF BOX 46 ===
 def _deterministic_fact_check(claim_text: str, sources: Optional[List[Dict[str, Any]]] = None) -> Optional[Dict[str, Any]]:
     low = (claim_text or "").lower().strip()
     srcs = sources if isinstance(sources, list) else []
@@ -3069,8 +2977,6 @@ def _deterministic_fact_check(claim_text: str, sources: Optional[List[Dict[str, 
             if re.search(rf"\b{claim_word}\b", low) and any(re.search(rf"\b{ow}\b", first_sent) for ow in opp_words):
                 return {"verdict": "contradicted", "confidence": 96, "correction": f"Contradicted by live evidence: {first_snip[:280]}", "selected_index": 0}
     return None
-# === END OF BOX 46 ===
-# === START OF BOX 47 ===
 def _parse_verdict_word(v_str: str) -> str:
     v = (v_str or "").lower().strip()
     bad_words = ("outdated", "contradicted", "false", "incorrect", "stale", "wrong", "refuted", "inaccurate", "myth")
@@ -3136,8 +3042,6 @@ async def llm_verify_claim_against_evidence(claim_text: str, sources: List[Dict[
         return {"verdict": v_clean, "confidence": 92, "correction": raw.strip()[:280], "selected_index": 0}
     best_snip = snip if snip else f"Verified factual check for: {claim_text}"
     return {"verdict": "supported", "confidence": 85, "correction": best_snip, "selected_index": 0}
-# === END OF BOX 47 ===
-# === START OF BOX 48 ===
 def _ensure_env_loaded() -> None:
     try:
         env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
@@ -3201,8 +3105,6 @@ def _check_unverified_or_factual(claim_text: str, sources: Optional[List[Dict[st
                 "selected_index": 0
             }
     return None
-# === END OF BOX 48 ===
-# === START OF BOX 49 ===
 def format_claim_object(claim_text: str, idx: int = 0, sources: Optional[List[Dict[str, Any]]] = None, t_eval: Optional[Dict[str, Any]] = None, r_eval: Optional[Dict[str, Any]] = None, l_eval: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     srcs = sources if isinstance(sources, list) else []
     l_ev = l_eval if isinstance(l_eval, dict) else {}
@@ -3322,8 +3224,6 @@ async def analyze_text_freshness(*args, **kwargs) -> Dict[str, Any]:
         "timestamp": datetime.now(timezone.utc).isoformat()
     })
     return agg
-# === END OF BOX 49 ===
-# === START OF BOX 50 ===
 def format_claim_object(claim_text: str, idx: int = 0, sources: Optional[List[Dict[str, Any]]] = None, t_eval: Optional[Dict[str, Any]] = None, r_eval: Optional[Dict[str, Any]] = None, l_eval: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     srcs = sources if isinstance(sources, list) else []
     l_ev = l_eval if isinstance(l_eval, dict) else {}
@@ -3398,8 +3298,6 @@ def aggregate_overall_verdict(verified_claims: List[Dict[str, Any]]) -> Dict[str
         "stale_count": stale_cnt, "outdated_count": stale_cnt, "uncertain_count": unc_cnt, "needs_review_count": unc_cnt,
         "summary": summary_txt, "explanation": summary_txt
     }
-# === END OF BOX 50 ===
-# === START OF BOX 51 ===
 def check_temporal_staleness(claim_text: str, sources: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     low = (claim_text or "").lower().strip()
     now_yr = datetime.now(timezone.utc).year
@@ -3440,8 +3338,6 @@ def check_temporal_staleness(claim_text: str, sources: Optional[List[Dict[str, A
     if "react 18" in low and any(w in low for w in ("latest", "current", "newest")):
         return {"is_stale": True, "reason": "Outdated software version: React 18 (released in 2022) has been superseded by React 19.", "Temporal_Status": "Stale"}
     return {"is_stale": False, "reason": "", "Temporal_Status": "Fresh"}
-# === END OF BOX 51 ===
-# === START OF BOX 52 ===
 def _scan_project_keys() -> None:
     base_dir = os.path.dirname(os.path.abspath(__file__))
     for fname in (".env", ".env.txt", ".env.local", ".env.example"):
@@ -3542,8 +3438,6 @@ async def search_web_evidence(query: str, max_results: int = 4) -> List[Dict[str
     if not results:
         results.append({"title": auth_title, "url": auth_url, "snippet": f"Authoritative reference check for: {query}"})
     return results[:max_results]
-# === END OF BOX 52 ===
-# === START OF BOX 53 ===
 def _check_unverified_or_factual(claim_text: str, sources: Optional[List[Dict[str, Any]]] = None, context_text: str = "") -> Optional[Dict[str, Any]]:
     low = (claim_text or "").lower().strip()
     ctx_low = (context_text or "").lower()
@@ -3601,4 +3495,3 @@ def _check_unverified_or_factual(claim_text: str, sources: Optional[List[Dict[st
         }
 
     return _deterministic_fact_check(claim_text, srcs)
-# === END OF BOX 53 ===

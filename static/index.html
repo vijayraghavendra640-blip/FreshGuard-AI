@@ -95,7 +95,6 @@
         </p>
       </div>
 
-      <!-- INPUT BOX CARD -->
       <div class="card-surface rounded-2xl p-6 sm:p-8 max-w-3xl mx-auto">
         <div class="flex items-center justify-between mb-3">
           <label for="ai-input-text" class="text-xs font-bold uppercase tracking-wider text-slate-700">
@@ -316,7 +315,6 @@
           </div>
         </div>
 
-        <!-- Submitted LLM Response Reference Box -->
         <div class="mt-5 rounded-xl bg-slate-50 border border-slate-200 p-4">
           <div class="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
             LLM-Generated Response (Reference)
@@ -505,7 +503,6 @@
         document.getElementById('stat-stale-claims').textContent = data.stale_count ?? data.stale_claims ?? staleCount;
         document.getElementById('stat-verified-claims').textContent = data.verified_count ?? data.verified_claims ?? verifiedCount;
 
-        // Populate LLM Reference Box
         document.getElementById('llm-reference-text').textContent = text;
 
         // Update Filter Counts & Hover Empty Flags
