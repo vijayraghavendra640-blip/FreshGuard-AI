@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#27272a"/><stop offset="1" stop-color="#09090b"/></linearGradient>
+    <linearGradient id="shield" x1="0.2" y1="0" x2="0.8" y2="1"><stop offset="0" stop-color="#6ee7b7"/><stop offset="0.55" stop-color="#10b981"/><stop offset="1" stop-color="#047857"/></linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.45"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  </defs>
+  <rect x="1" y="1" width="62" height="62" rx="16" fill="url(#tile)"/>
+  <rect x="1.5" y="1.5" width="61" height="61" rx="15.5" fill="none" stroke="#fff" stroke-opacity="0.12"/>
+  <path d="M32 11.5 47.5 17v12.6c0 10.6-6.5 18.3-15.5 22.4-9-4.1-15.5-11.8-15.5-22.4V17z" fill="url(#shield)"/>
+  <path d="M32 11.5 47.5 17v6c-5 2.6-10.2 3.9-15.5 3.9S21.5 25.6 16.5 23v-6z" fill="url(#shine)"/>
+  <path d="m24.5 31.5 5.2 5.2 10-10.4" fill="none" stroke="#fff" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

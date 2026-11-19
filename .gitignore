@@ -1,7 +1,26 @@
-.env
+# Python
 __pycache__/
 *.pyc
+.pytest_cache/
 .venv/
 venv/
+
+# Node / frontend
 node_modules/
-frontend/
+frontend/_legacy/
+
+# Secrets (never commit real keys; .env.example is the template)
+.env
+.env.*
+!.env.example
+
+# Bifrost runtime data (config.json is tracked)
+bifrost/*.db
+bifrost/*.db-shm
+bifrost/*.db-wal
+bifrost/*.log
+bifrost/logs/
+
+# Local tooling
+.vscode/
+.claude/

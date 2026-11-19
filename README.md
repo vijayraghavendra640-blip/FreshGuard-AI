@@ -17,8 +17,8 @@ Large Language Models (LLMs) are trained on static historical snapshots of the w
 FreshGuard AI sits as an intelligent verification layer on top of LLM outputs. By combining **Bifrost AI** (high-speed LLM gateway and orchestration) with the **Tavily Search API** (real-time web search designed for AI agents), FreshGuard AI:
 1. Decomposes AI-generated responses into atomic, verifiable claims.
 2. Grounds each claim against live web evidence retrieved via **Tavily API**.
-3. Routes claim-vs-evidence verification and auto-correction prompts through **Bifrost AI** to `llama-3.3-70b-versatile`.
-4. Computes an **Overall Freshness Score (0–100%)**, classifies every claim as **Verified**, **Needs Review**, or **Stale / Outdated**, and provides an up-to-date corrected answer with clickable live web citations.
+3. Routes every model call (extraction, source vetting, verification, hallucination audit) through a **Bifrost AI gateway**.
+4. Computes an **Overall Freshness Score (0–100%)**, classifies every claim as **Verified**, **Needs Review**, or **Stale / Outdated**, and shows the current latest information for each claim with a comparison web URL.
 
 ---
 
@@ -44,157 +44,133 @@ FreshGuard AI solves stale AI outputs through an automated **Detect → Search �
   - 🟢 **Verified (`75% – 100%`):** Claim is confirmed accurate and current by live Tavily web evidence.
   - 🟡 **Needs Review (`50% – 74%`):** Claim lacks sufficient independent live corroboration or contains unverified claims.
   - 🔴 **Stale / Outdated (`0% – 49%`):** Claim is contradicted by newer pricing, updated API documentation, enacted regulations, or current dates.
-- **Automated Answer Correction:** Generates a clean, up-to-date replacement statement alongside the live source URL.
+- **Current Information with Sources:** Shows what live sources say today for each claim, with a comparison web URL the user can open to verify it.
 
 ---
 
-## 🤝 4. How Both Combined Technologies Contribute (`Bifrost AI` + `Tavily API`)
+## 🤝 4. How Tavily and Bifrost Work Together
 
-FreshGuard AI is built by combining **Bifrost AI** and **Tavily Search API** into a unified verification pipeline. Each technology solves half of the stale-answer challenge:
+### 🌐 Tavily: live evidence
+- Every claim gets a planned Tavily search (`topic` = `news` for leadership, regulation and events; `search_depth` = `advanced` for time-sensitive claims; `include_answer` and `include_published_date` on).
+- Results come back with publication dates, which drive the **recency** part of each freshness score.
+- If evidence is thin, the Evidence Agent refines the query and searches again.
 
-### ⚡ 1. How Bifrost AI Contributes to FreshGuard AI
-**Bifrost AI** serves as the **Unified AI Gateway & LLM Orchestration Layer** in our backend (`engine.py`):
-- **High-Speed Unified LLM Routing:** Routes FreshGuard AI's claim decomposition, semantic contradiction analysis, and answer-rewriting requests through an OpenAI-compatible gateway endpoint (`BIFROST_BASE_URL` / Groq `llama-3.3-70b-versatile`) with microsecond gateway overhead.
-- **Resilience & Automatic Failover:** Ensures that if an LLM inference call experiences rate limits or transient timeouts during multi-claim verification, requests are handled gracefully with fallback protection so the verification pipeline never crashes.
-- **Structured Verification Output:** Powers the semantic reasoning step that compares the user's AI text against live search context and outputs structured JSON verdicts (`Verified`, `Needs Review`, `Stale / Outdated`), confidence scores, and natural-language corrections.
+### ⚡ Bifrost: every model call
+- FreshGuard talks only to a **Bifrost AI gateway** (`BIFROST_BASE_URL`, OpenAI-compatible). Bifrost holds the provider key (Groq) and handles retries and **model fallbacks** (`fallbacks` chain in each request).
+- These all go through Bifrost: claim extraction, source vetting, verification and the hallucination audit (on a *different* model).
+- If the gateway is down or rate-limited, claims are marked **Needs Review**. FreshGuard never falls back to "Verified".
 
-### 🌐 2. How Tavily Search API Contributes to FreshGuard AI
-**Tavily API** (`https://api.tavily.com/search`) serves as the **Real-Time Web Intelligence & Grounding Layer**:
-- **Purpose-Built Search for AI Verification:** Unlike traditional search engines that return raw HTML clutter, Tavily returns clean, high-signal factual snippets, synthesized context, and authoritative URLs ready for LLM consumption.
-- **Eliminating Knowledge Cutoff Blindness:** For every claim extracted from the AI output, Tavily fetches the current real-world state from the live internet—whether it is a current subscription price, live API changelog, or newly enacted law.
-- **Auditable Citation Links:** Supplies the direct live web URLs displayed on each verification card in the FreshGuard AI dashboard.
-
-### 🔗 Synergy: Why Combining Bifrost AI + Tavily API Matters
-- **Tavily API alone** can fetch live web snippets, but cannot semantically decompose complex paragraphs, reason over subtle temporal contradictions, or rewrite stale sentences into corrected prose.
-- **Bifrost AI + LLM inference alone** can reason over text rapidly, but without live web grounding it remains trapped inside the model's static training cutoff.
-- **Together in FreshGuard AI:** **Tavily API** supplies real-time factual truth from the live web, and **Bifrost AI** orchestrates ultra-fast, reliable LLM reasoning over that live evidence to detect staleness and auto-correct answers in real time.
+### 🤖 Agentic verification layer
+| Agent | What it does |
+| :--- | :--- |
+| **Claim extractor** | LLM splits the answer into self-contained claims, labels category and time-sensitivity. Claims that add words or numbers not in the answer are rejected and extraction is re-run. |
+| **Evidence Agent** | Searches Tavily, screens out prompt-injection snippets, low-credibility domains and duplicates, asks an LLM to vet each source's relevance and reliability, overrides "relevant" judgements on snippets that don't mention the claim's subject, and re-searches when evidence is insufficient. Only vetted sources reach the verifier or the UI. |
+| **Verifier Agent** | Judges the claim against vetted sources only, and must cite one source and quote it verbatim. |
+| **Hallucination Auditor** | Deterministic checks: the cited source exists, the quote is really in it, and the numbers are in the evidence. Then an independent LLM audit on a different model. A failed audit **sends the claim back to the verifier with the issues listed** (up to 3 attempts). If it still fails, the verdict is withheld as Needs Review. |
 
 ---
 
-## 🏗️ 5. Technical Architecture & Implementation
+## 🏗️ 5. Architecture
 
-### System Architecture Diagram
+    React UI (frontend/, built into static/)  --SSE-->  FastAPI (main.py)
+                                                           |
+                               freshguard/pipeline.py (orchestrator, deadlines, cache)
+           +--------------------+--------------------+--------------------+------------------+
+       claims.py          Evidence Agent        Verifier Agent     Hallucination Auditor   scoring.py
+     (extraction)        (search + vetting)                         (different model)      (evidence-based)
+           |                 |        |               |                     |
+           +---- bifrost_client.py <--+---------------+---------------------+
+                       |              tavily_client.py
+                       v                     v
+              Bifrost gateway (:8080)   Tavily Search API
+                       v
+                  Groq models
 
-    +------------------------------------------------------------------------+
-    |                        USER / AI APPLICATION                           |
-    |                      Submits AI-Generated Answer             |
-    +-----------------------------------+------------------------------------+
-                                        |
-                                        v
-    +------------------------------------------------------------------------+
-    |                  FASTAPI BACKEND SERVER (main.py)                      |
-    |            REST Endpoints: POST /verify  |  GET /health                |
-    +-----------------------------------+------------------------------------+
-                                        |
-                                        v
-    +------------------------------------------------------------------------+
-    |           STEP 1: CLAIM DECOMPOSITION & TEMPORAL ANALYSIS              |
-    |  - Splits AI output into atomic verifiable claims (engine.py)          |
-    |  - Detects temporal markers (years, prices, APIs, regulations)         |
-    +-----------------------------------+------------------------------------+
-                                        |
-                                        v
-    +------------------------------------------------------------------------+
-    |           STEP 2: REAL-TIME WEB GROUNDING (TAVILY SEARCH API)          |
-    |  - Sends targeted search queries to https://api.tavily.com/search      |
-    |  - Retrieves live factual snippets, answers, and source URLs           |
-    +-----------------------------------+------------------------------------+
-                                        |
-                                        v
-    +------------------------------------------------------------------------+
-    |        STEP 3: SEMANTIC VERIFICATION GATEWAY (BIFROST AI + GROQ)       |
-    |  - Routes Claim + Live Tavily Evidence through Bifrost AI Gateway      |
-    |  - Evaluates temporal drift, factual contradictions & evidence support |
-    |  - Generates updated factual correction for any Stale/Outdated claim   |
-    +-----------------------------------+------------------------------------+
-                                        |
-                                        v
-    +------------------------------------------------------------------------+
-    |        STEP 4: FRESHNESS SCORING & INTERACTIVE DASHBOARD UI            |
-    |  - Computes Overall Freshness Score (0-100%) & Status Badge            |
-    |  - Displays Verified, Needs Review & Stale counts + Live Web URLs      |
-    +-----------------------------------+------------------------------------+
+**Scoring.** Each claim's evidence strength (0–100) is built from source authority (30), recency (25), corroboration (20) and grounding (25: quote verified plus audit result). The freshness score sits inside the verdict's band, so the label and the number always agree:
+- 🟢 **Verified** 75–100
+- 🟡 **Needs Review** 50–74
+- 🔴 **Stale / Outdated** 0–49
 
-### Core Implementation Modules
-1. **`main.py` (FastAPI Application & Routing Layer):**
-   - Serves the web dashboard (`GET /`) and exposes the verification REST API (`POST /verify`, `POST /api/verify`, and `GET /health`).
-   - Validates incoming payloads using Pydantic models and returns structured JSON responses to the frontend.
-2. **`engine.py` (FreshGuard Verification Engine):**
-   - **Claim Extraction & Temporal Drift Engine:** Parses input text into atomic claims and checks time-anchored statements against the current calendar year (`2026`) and live facts.
-   - **Tavily Search Client:** Queries the Tavily API (`https://api.tavily.com/search`) with `search_depth` and `include_answer` enabled to gather live web evidence and source URLs.
-   - **Bifrost AI Gateway Integration:** Routes LLM verification requests through the Bifrost-compatible chat completions layer (`BIFROST_BASE_URL` / Groq `llama-3.3-70b-versatile`) to compare claims against Tavily evidence and synthesize corrected statements.
-   - **Freshness Score Aggregator:** Calculates per-claim scores and aggregates them into an overall freshness percentage (`0–100%`) and overall status (`Verified`, `Needs Review`, or `Stale / Outdated`).
-3. **`static/index.html` (Interactive Frontend Dashboard):**
-   - Clean, responsive dashboard displaying the **Overall Freshness Score** gauge, summary counters (**Verified Information**, **Needs Review**, **Stale / Outdated**), and per-claim verification cards with **Current Latest Information** and clickable **Live Web URLs**.
+The overall verdict is driven by the worst claim: any stale claim makes the report stale. Text with no claims gets no score.
 
 ---
 
 ## 🛠️ 6. Technologies Used
 
-| Layer | Technology | Role in Project |
-| :--- | :--- | :--- |
-| **AI Gateway & Routing** | **Bifrost AI** | Unified LLM gateway for low-latency model routing, resilience, and structured verification requests |
-| **Live Web Search** | **Tavily Search API** | Real-time web search and factual grounding for AI claims |
-| **LLM Inference** | **Groq Cloud (`llama-3.3-70b-versatile`)** | High-speed semantic claim verification and stale-answer rewriting |
-| **Backend Framework** | **Python 3.13, FastAPI, Uvicorn** | Asynchronous REST API server and backend orchestration |
-| **HTTP & Environment** | **`httpx`, `python-dotenv`, `pydantic`** | API requests, environment variable security, and schema validation |
-| **Frontend Interface** | **HTML5, CSS3, Vanilla JavaScript** | Interactive real-time Freshness Detection & Live Verification UI |
-| **Deployment** | **Render Cloud, Git & GitHub** | Public cloud hosting and version control |
+| Layer | Technology |
+| :--- | :--- |
+| AI gateway | **Bifrost** (local, `scripts/run_bifrost.py`, config in `bifrost/config.json`) |
+| Live web search | **Tavily Search API** |
+| Models (via Bifrost) | Groq `openai/gpt-oss-120b` (verifier), `qwen/qwen3.8-27b` (auditor), `openai/gpt-oss-20b` (fallback) |
+| Backend | Python 3.13, FastAPI, httpx, Server-Sent Events streaming |
+| Frontend | React 19 + TypeScript + Vite, styled on the free shadcn/ui design system with Inter (self-hosted) |
+| Tests | pytest with mocked Bifrost and Tavily transports |
 
 ---
 
-## 📂 7. Project Folder Structure
+## 📂 7. Project Structure
 
     FreshGuard-AI/
-    ├── main.py              # FastAPI server entry point & REST API endpoints
-    ├── engine.py            # Core Stale-Answer Detection, Bifrost AI & Tavily API integration
-    ├── requirements.txt     # Python package dependencies
-    ├── .gitignore           # Excludes .env secrets and local environment files
-    ├── README.md            # Project documentation
-    └── static/
-        └── index.html       # FreshGuard AI Interactive Web Dashboard
+    ├── main.py                 # FastAPI app: REST + streaming endpoints, security headers, rate limit
+    ├── engine.py               # Backwards-compatible wrapper around the freshguard package
+    ├── freshguard/             # Verification engine
+    │   ├── config.py           # Settings (env loaded once, platform variables win)
+    │   ├── bifrost_client.py   # Bifrost gateway client (fallbacks, 429 back-off, JSON repair)
+    │   ├── tavily_client.py    # Tavily client (dates, authority tiers, injection screening, cache)
+    │   ├── claims.py           # Claim extraction with grounding check
+    │   ├── agents.py           # Evidence Agent, Verifier Agent, Hallucination Auditor
+    │   ├── scoring.py          # Evidence-based scoring and aggregation
+    │   ├── pipeline.py         # Orchestration, deadlines, streaming events
+    │   └── sources.py, cache.py, presets.py
+    ├── frontend/               # React app (npm run build -> static/)
+    ├── static/                 # Built frontend served by FastAPI
+    ├── bifrost/config.json     # Bifrost provider config (keys come from env)
+    ├── scripts/run_bifrost.py  # Starts the local Bifrost gateway
+    └── tests/                  # pytest suite
 
 ---
 
-## 🚀 8. Installation & Local Setup Steps
+## 🚀 8. Local Setup
 
-### Prerequisites
-- Python 3.10+ (tested on Python 3.13)
-- A **Tavily API Key** (`tvly-...`)
-- A **Groq / Bifrost AI API Key** (`gsk_...`)
+**Prerequisites:** Python 3.10+ (tested on 3.13), Node.js 18+, a Tavily key and a Groq key.
 
-### Step 1: Clone the Repository
+1. Install backend dependencies:
 
-    git clone https://github.com/vijayraghavendra640-blip/FreshGuard-AI.git
-    cd FreshGuard-AI
+        py -3.13 -m pip install -r requirements-dev.txt
 
-### Step 2: Install Dependencies
+2. Create `.env` from `.env.example` and fill in `TAVILY_API_KEY` and `GROQ_API_KEY`.
 
-    pip install -r requirements.txt
+3. Start the Bifrost gateway in its own terminal. The first run downloads the Bifrost binary.
 
-*(Or on Windows using Python 3.13):*
+        py -3.13 scripts/run_bifrost.py
 
-    py -3.13 -m pip install fastapi uvicorn httpx python-dotenv pydantic
+   The Bifrost dashboard is at http://127.0.0.1:8080.
 
-### Step 3: Set Up Environment Variables (`.env`)
-Create a `.env` file in the project root folder:
+4. Build the frontend once, or after UI changes:
 
-    GROQ_API_KEY=your_groq_api_key_here
-    TAVILY_API_KEY=your_tavily_api_key_here
-    BIFROST_BASE_URL=https://api.groq.com/openai/v1
+        cd frontend
+        npm install
+        npm run build
 
-### Step 4: Run the Application Server
+5. Start FreshGuard:
 
-    uvicorn main:app --reload --port 8005
+        py -3.13 -m uvicorn main:app --port 8005
 
-*(Or on Windows with Python 3.13):*
+   Then open **http://127.0.0.1:8005**. For UI development with hot reload, run `npm run dev` in `frontend/` and open http://localhost:5173.
 
-    py -3.13 -m uvicorn main:app --reload --port 8005
+6. Run the tests:
 
-### Step 5: Launch the Dashboard
-Open your browser and navigate to:
+        py -3.13 -m pytest
 
-    http://127.0.0.1:8005
+### API
+| Method | Path | Purpose |
+| :--- | :--- | :--- |
+| POST | `/api/verify` · `/api/verify/stream` | Verify an AI answer (JSON report, or live SSE events) |
+| POST | `/api/guardrail` | CI/CD gate: `ALLOW_DEPLOY` only if every claim is verified and audited |
+| GET | `/api/health` | Gateway reachability, models, Tavily status |
+| GET | `/api/presets` | Demo inputs |
+
+> **Note:** Groq's on-demand tier limits tokens per minute per model. FreshGuard spreads load across three models, caps concurrent calls, and waits out 429s using Groq's retry hint. Long answers can still take a minute or two on the free tier.
 
 ---
 

@@ -1,102 +1,173 @@
-import os
+import asyncio
+import json
+import logging
+import secrets
 import time
 from collections import defaultdict, deque
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Deque, Dict, Optional
+from typing import Any, AsyncIterator, Deque, Dict, Optional
 
-from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from engine import (
-    CLAIM_CACHE,
-    DEMO_PRESETS,
-    analyze_text_freshness,
-    generate_ai_answer_with_bifrost,
-    get_llm_api_key,
-    get_tavily_api_key,
-)
+from freshguard import ENGINE_VERSION
+from freshguard.config import get_settings
+from freshguard.pipeline import get_engine
+from freshguard.presets import DEMO_PRESETS
 
-load_dotenv(override=True)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
+logger = logging.getLogger("freshguard.api")
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
+settings = get_settings()
 
-app = FastAPI(title="FreshGuard AI — Stale-Answer Detector & Live Fact Verification", version="2.0.0")
 
-allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "http://localhost:8005,http://127.0.0.1:8005")
-allowed_origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    engine = get_engine()
+    health = await engine.gateway.health()
+    if not health.get("reachable"):
+        logger.warning("Bifrost gateway is not reachable at %s; claims will be marked Needs Review until it is.", settings.bifrost_base_url)
+    if settings.bifrost_looks_direct_provider:
+        logger.warning("BIFROST_BASE_URL points at a model provider, not a Bifrost gateway.")
+    if not settings.tavily_api_key:
+        logger.warning("TAVILY_API_KEY is not set; live evidence retrieval is disabled.")
+    yield
+    await engine.aclose()
+
+
+app = FastAPI(title="FreshGuard AI: Stale-Answer Detector", version=ENGINE_VERSION, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
+    allow_origins=settings.allowed_origins,
     allow_credentials=False,
     allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type", "X-Admin-Token"],
+    allow_headers=["Content-Type", "X-Admin-Token", "X-API-Key"],
 )
 
 RATE_LIMIT_WINDOW = 60.0
-RATE_LIMIT_MAX_REQUESTS = int(os.getenv("RATE_LIMIT_PER_MINUTE", "30"))
 _request_log: Dict[str, Deque[float]] = defaultdict(deque)
+CSP = (
+    "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; "
+    "connect-src 'self'; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+)
+
+
+def _client_ip(request: Request) -> str:
+    # Run uvicorn with --proxy-headers behind a reverse proxy so request.client is the real client.
+    return request.client.host if request.client else "unknown"
 
 
 @app.middleware("http")
 async def security_and_rate_limit_middleware(request: Request, call_next):
     if request.url.path.startswith("/api/") and request.method == "POST":
-        client_ip = request.client.host if request.client else "local"
+        ip = _client_ip(request)
         now = time.monotonic()
-        bucket = _request_log[client_ip]
+        bucket = _request_log[ip]
         while bucket and (now - bucket[0]) > RATE_LIMIT_WINDOW:
             bucket.popleft()
-        if len(bucket) >= RATE_LIMIT_MAX_REQUESTS:
-            return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded."})
+        if len(bucket) >= settings.rate_limit_per_minute:
+            return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Try again in a minute."})
         bucket.append(now)
+        if len(_request_log) > 5000:  # prune idle clients
+            for k in [k for k, v in _request_log.items() if not v or (now - v[-1]) > RATE_LIMIT_WINDOW]:
+                _request_log.pop(k, None)
 
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    if not request.url.path.startswith(("/docs", "/redoc", "/openapi.json")):
+        response.headers["Content-Security-Policy"] = CSP
+    if request.url.scheme == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
-
-
-if STATIC_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 class VerifyRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=8000)
 
 
-class GenerateAndVerifyRequest(BaseModel):
-    prompt: str = Field(..., min_length=1, max_length=2000)
-
-
 class GuardrailRequest(BaseModel):
-    text: str = Field(..., max_length=8000)
+    text: str = Field(..., min_length=1, max_length=8000)
     min_score_threshold: int = Field(default=80, ge=0, le=100)
 
 
-@app.get("/")
-async def serve_index():
-    index_file = STATIC_DIR / "index.html"
-    if not index_file.exists():
-        raise HTTPException(status_code=404, detail="Frontend index.html not found.")
-    return FileResponse(str(index_file))
+def _clean_or_422(value: str, what: str) -> str:
+    cleaned = (value or "").strip()
+    if not cleaned:
+        raise HTTPException(status_code=422, detail=f"{what} cannot be empty.")
+    return cleaned
 
+
+def _sse(event: Dict[str, Any]) -> str:
+    return f"data: {json.dumps(event, default=str)}\n\n"
+
+
+async def _stream_job(request: Request, job) -> AsyncIterator[str]:
+    """Run `job(emit)` and stream every emitted event as Server-Sent Events."""
+    queue: asyncio.Queue = asyncio.Queue()
+
+    async def emit(evt: Dict[str, Any]) -> None:
+        await queue.put(evt)
+
+    async def runner() -> None:
+        try:
+            await job(emit)
+        except HTTPException as exc:
+            await queue.put({"type": "error", "status": exc.status_code, "detail": exc.detail})
+        except Exception:
+            logger.exception("streamed job failed")
+            await queue.put({"type": "error", "status": 500, "detail": "Verification failed unexpectedly."})
+        finally:
+            await queue.put({"type": "done"})
+
+    task = asyncio.create_task(runner())
+    try:
+        while True:
+            try:
+                evt = await asyncio.wait_for(queue.get(), timeout=15.0)
+            except asyncio.TimeoutError:
+                if await request.is_disconnected():
+                    break
+                yield ": keep-alive\n\n"
+                continue
+            yield _sse(evt)
+            if evt.get("type") == "done":
+                break
+    finally:
+        if not task.done():
+            task.cancel()
+
+
+SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+
+
+# ------------------------------------------------------------------ API
 
 @app.get("/health")
 @app.get("/api/health")
 async def health_check() -> Dict[str, Any]:
+    engine = get_engine()
+    gateway = await engine.gateway.health()
+    ready = bool(gateway.get("reachable")) and engine.tavily.configured and not settings.bifrost_looks_direct_provider
     return {
-        "status": "ok",
+        "status": "ok" if ready else "degraded",
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "tavily_configured": bool(get_tavily_api_key()),
-        "llm_configured": bool(get_llm_api_key()),
-        "cache_entries": CLAIM_CACHE.size(),
+        "engine_version": ENGINE_VERSION,
+        "tavily_configured": engine.tavily.configured,
+        "bifrost": gateway,
+        "gateway_stats": engine.gateway.stats.as_dict(),
+        "tavily_stats": {"calls": engine.tavily.calls, "failures": engine.tavily.failures},
+        "cache_entries": engine.claim_cache.size(),
+        "limits": {"max_claims": settings.max_claims, "max_verification_attempts": settings.max_verification_attempts},
     }
 
 
@@ -108,85 +179,79 @@ async def get_presets():
 @app.post("/api/verify")
 @app.post("/api/analyze")
 async def verify_text_endpoint(req: VerifyRequest):
-    cleaned = req.text.strip()
-    if not cleaned:
-        raise HTTPException(status_code=422, detail="Input text cannot be empty.")
-    return await analyze_text_freshness(cleaned)
+    return await get_engine().analyze(_clean_or_422(req.text, "Input text"))
 
 
-@app.post("/api/generate-and-verify")
-async def generate_and_verify_endpoint(req: GenerateAndVerifyRequest):
-    cleaned_prompt = req.prompt.strip()
-    if not cleaned_prompt:
-        raise HTTPException(status_code=422, detail="Prompt cannot be empty.")
-    gen_result = await generate_ai_answer_with_bifrost(cleaned_prompt)
-    if isinstance(gen_result, dict):
-        generated_text = str(gen_result.get("generated_text") or gen_result.get("answer") or gen_result.get("response") or "").strip()
-        gen_ok = bool(gen_result.get("ok", True))
-        model_used = str(gen_result.get("model", "unknown"))
-        provider_used = str(gen_result.get("provider", "bifrost"))
-    else:
-        generated_text = str(gen_result).strip()
-        gen_ok = bool(generated_text)
-        model_used = "unknown"
-        provider_used = "bifrost"
-
-    if not generated_text or not gen_ok:
-        return {
-            "prompt": cleaned_prompt, "generated_text": generated_text,
-            "generation_succeeded": False, "model": model_used, "provider": provider_used,
-            "verification": await analyze_text_freshness(""),
-        }
-    report = await analyze_text_freshness(generated_text)
-    return {
-        "prompt": cleaned_prompt, "generated_text": generated_text,
-        "generation_succeeded": True, "model": model_used, "provider": provider_used,
-        "verification": report, **report,
-    }
+@app.post("/api/verify/stream")
+async def verify_text_stream(req: VerifyRequest, request: Request):
+    text = _clean_or_422(req.text, "Input text")
+    return StreamingResponse(_stream_job(request, lambda emit: get_engine().analyze(text, emit)),
+                             media_type="text/event-stream", headers=SSE_HEADERS)
 
 
 @app.post("/api/guardrail")
-async def cicd_guardrail_endpoint(req: GuardrailRequest):
-    cleaned = (req.text or "").strip()
-    if not cleaned:
-        return {
-            "guardrail_passed": False, "action": "BLOCK_DEPLOY",
-            "reason": "Empty or whitespace-only text cannot pass guardrail.",
-            "overall_score": 0, "min_score_threshold": req.min_score_threshold, "total_claims": 0,
-        }
-    report = await analyze_text_freshness(cleaned)
-    total_claims = int(report.get("total_claims", 0))
-    stale_count = int(report.get("stale_count", 0))
-    incorrect_count = int(report.get("incorrect_count", 0))
-    needs_review_count = int(report.get("needs_review_count", 0))
-    verified_count = int(report.get("verified_count", 0))
-    score = int(report.get("overall_score", 0))
-    overall_verdict = str(report.get("overall_verdict", "Needs Review"))
-    threshold = max(1, int(req.min_score_threshold))
-
+async def cicd_guardrail_endpoint(req: GuardrailRequest, x_api_key: Optional[str] = Header(default=None)):
+    if settings.guardrail_api_key and not (x_api_key and secrets.compare_digest(x_api_key, settings.guardrail_api_key)):
+        raise HTTPException(status_code=401, detail="Missing or invalid X-API-Key header.")
+    report = await get_engine().analyze(_clean_or_422(req.text, "Input text"))
+    claims = report.get("claims", [])
+    total = int(report.get("total_claims") or 0)
+    score = report.get("overall_score")
+    all_grounded = all(c.get("audit", {}).get("status") == "passed" for c in claims)
     passed = (
-        total_claims > 0 and stale_count == 0 and incorrect_count == 0
-        and needs_review_count == 0 and verified_count == total_claims
-        and overall_verdict == "Verified" and score >= threshold
+        total > 0 and report.get("overall_verdict") == "Verified" and report.get("verified_count") == total
+        and all_grounded and score is not None and score >= req.min_score_threshold
     )
+    if passed:
+        reason = "All claims verified against vetted live sources and passed the hallucination audit."
+    elif total == 0:
+        reason = "No verifiable claims found."
+    elif report.get("stale_count"):
+        reason = f"{report['stale_count']} claim(s) are stale or outdated."
+    elif report.get("needs_review_count"):
+        reason = f"{report['needs_review_count']} claim(s) could not be verified."
+    elif not all_grounded:
+        reason = "Some verdicts were not confirmed by the independent auditor."
+    else:
+        reason = f"Score {score} is below the threshold {req.min_score_threshold}."
     return {
-        "guardrail_passed": passed,
-        "action": "ALLOW_DEPLOY" if passed else "BLOCK_DEPLOY",
-        "overall_score": score, "overall_verdict": overall_verdict,
-        "min_score_threshold": req.min_score_threshold, "total_claims": total_claims,
-        "stale_count": stale_count, "needs_review_count": needs_review_count,
-        "verified_count": verified_count, "report": report,
+        "guardrail_passed": passed, "action": "ALLOW_DEPLOY" if passed else "BLOCK_DEPLOY", "reason": reason,
+        "overall_score": score, "overall_verdict": report.get("overall_verdict"),
+        "min_score_threshold": req.min_score_threshold, "total_claims": total,
+        "stale_count": report.get("stale_count"), "needs_review_count": report.get("needs_review_count"),
+        "verified_count": report.get("verified_count"), "report": report,
     }
 
 
 @app.post("/api/cache/clear")
-async def clear_cache_endpoint(request: Request, x_admin_token: Optional[str] = Header(default=None)):
-    configured_token = os.getenv("ADMIN_API_TOKEN", "").strip()
-    client_host = request.client.host if request.client else ""
-    if configured_token:
-        if x_admin_token != configured_token:
-            raise HTTPException(status_code=403, detail="Invalid X-Admin-Token header.")
-    elif client_host not in ("127.0.0.1", "::1", "localhost", "testclient"):
-        raise HTTPException(status_code=403, detail="Restricted to localhost or admin.")
-    CLAIM_CACHE.clear()
-    return {"status": "cleared", "cache_entries": 0}
+async def clear_cache_endpoint(x_admin_token: Optional[str] = Header(default=None)):
+    if not settings.admin_api_token:
+        raise HTTPException(status_code=403, detail="Cache clearing is disabled. Set ADMIN_API_TOKEN to enable it.")
+    if not (x_admin_token and secrets.compare_digest(x_admin_token, settings.admin_api_token)):
+        raise HTTPException(status_code=403, detail="Invalid X-Admin-Token header.")
+    engine = get_engine()
+    cleared = engine.claim_cache.clear() + engine.tavily.cache.clear()
+    return {"status": "cleared", "entries_cleared": cleared}
+
+
+# ------------------------------------------------------------------ frontend (React build in ./static)
+
+if (STATIC_DIR / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=str(STATIC_DIR / "assets")), name="assets")
+
+
+@app.get("/")
+async def serve_index():
+    index_file = STATIC_DIR / "index.html"
+    if not index_file.exists():
+        raise HTTPException(status_code=404, detail="Frontend not built. Run `npm run build` in ./frontend.")
+    return FileResponse(str(index_file))
+
+
+@app.get("/{asset_name}")
+async def serve_root_asset(asset_name: str):
+    """Serve top-level build files such as favicon.svg; anything else falls back to 404."""
+    candidate = (STATIC_DIR / asset_name).resolve()
+    if candidate.parent == STATIC_DIR.resolve() and candidate.is_file() and candidate.suffix in (".svg", ".ico", ".png", ".txt", ".webmanifest"):
+        return FileResponse(str(candidate))
+    raise HTTPException(status_code=404, detail="Not found")
