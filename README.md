@@ -3,7 +3,7 @@
 **Geek Room Global AI Hackathon 2026 | Problem Statement 06: Build a Stale-Answer Detector for AI Applications**  
 **Powered by Bifrost AI & Tavily Search API**
 
-- 🌐 **Live Working Prototype:** [https://freshguard-ai-9tgb.onrender.com/](https://freshguard-ai-9tgb.onrender.com/)
+- 🌐 **Live Working Prototype:** [https://freshguard-ai-26lo.onrender.com/](https://freshguard-ai-26lo.onrender.com/)
 - 💻 **Public GitHub Repository:** [https://github.com/vijayraghavendra640-blip/FreshGuard-AI](https://github.com/vijayraghavendra640-blip/FreshGuard-AI)
 
 ---
@@ -176,7 +176,7 @@ The overall verdict is driven by the worst claim: any stale claim makes the repo
 
 ## 🧪 9. Working Prototype & Industry Test Cases
 
-Try the live prototype at **[https://freshguard-ai-9tgb.onrender.com/](https://freshguard-ai-9tgb.onrender.com/)** across the core domains where LLM answers become stale:
+Try the live prototype at **[https://freshguard-ai-26lo.onrender.com/](https://freshguard-ai-26lo.onrender.com/)** across the core domains where LLM answers become stale:
 
 ### 💰 Domain 1: Product Pricing Changes
 - **Test Case 1 (Stale AI Tier Pricing — `Stale / Outdated`):**
